@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/database_service.dart';
+import 'package:flutter_aplikasi_cuaca/main.dart';
 
 //======= WIDGET HALAMAN HASIL PENCARIAN CUACA (STATEFUL) =======
 class Result extends StatefulWidget {
@@ -20,56 +22,94 @@ class _ResultState extends State<Result> {
   late Future<Map<String, dynamic>> weatherData;
   late Future<Map<String, dynamic>> forecastData;
 
+  String formatTemperature(
+    num value,
+    bool isCelsius, {
+    int decimalPlaces = 0,
+  }) {
+    final celsius = value.toDouble();
+
+    final temperature = isCelsius ? celsius : (celsius * 9 / 5) + 32;
+
+    final unit = isCelsius ? '°C' : '°F';
+
+    return '${temperature.toStringAsFixed(decimalPlaces)}$unit';
+  }
+
   //======= FUNGSI MENAMBAHKAN KOTA KE FAVORIT (FIRESTORE) =======
+
   Future<void> addFavorite() async {
     final user = FirebaseAuth.instance.currentUser;
 
-    if (user == null) return;
-
-    final ref = FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('favorite');
-
-    final check = await ref
-        .where(
-          'city',
-          isEqualTo: widget.city,
-        )
-        .get();
-
-    // Mengecek apakah kota sudah ada di favorit
-    if (check.docs.isNotEmpty) {
-      if (!mounted) return;
-
+    if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            "Kota sudah ada di favorit ⭐",
-          ),
+          content: Text('Silakan login terlebih dahulu.'),
         ),
       );
-
       return;
     }
 
-    // Menyimpan data kota favorit ke Firestore
-    await ref.add({
-      'city': widget.city,
-      'time': Timestamp.now(),
-    });
+    final city = widget.city.trim();
 
-    if (!mounted) return;
+    try {
+      final ref = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('favorite');
 
-    setState(() {});
+      // Periksa apakah kota sudah ada di Firestore.
+      final check = await ref.where('city', isEqualTo: city).limit(1).get();
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          "Ditambahkan ke favorit ⭐",
+      if (check.docs.isNotEmpty) {
+        // Pastikan data yang sudah ada juga tersimpan di SQLite.
+        await DatabaseService.instance.addFavoriteCity(
+          userId: user.uid,
+          city: city,
+        );
+
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kota ini sudah ada di favorit ⭐'),
+          ),
+        );
+        return;
+      }
+
+      // Simpan ke SQLite.
+      await DatabaseService.instance.addFavoriteCity(
+        userId: user.uid,
+        city: city,
+      );
+
+      // Simpan ke Firestore.
+      await ref.add({
+        'city': city,
+        'time': Timestamp.now(),
+      });
+
+      if (!mounted) return;
+
+      setState(() {});
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Berhasil ditambahkan ke favorit ⭐'),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      debugPrint('ADD FAVORITE ERROR: $e');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal menambahkan favorit: $e'),
+        ),
+      );
+    }
   }
 
   //======= FUNGSI MENYIMPAN RIWAYAT PENCARIAN (FIRESTORE) =======
@@ -84,7 +124,11 @@ class _ResultState extends State<Result> {
       final user = FirebaseAuth.instance.currentUser;
 
       if (user == null) return;
-
+      // Simpan nama kota hasil API ke SQLite.
+      await DatabaseService.instance.addSearchHistory(
+        userId: user.uid,
+        city: cityName,
+      );
       final ref = FirebaseFirestore.instance
           .collection(
             'users',
@@ -192,32 +236,32 @@ class _ResultState extends State<Result> {
           "Cuaca ${widget.city}",
         ),
         actions: [
-          StreamBuilder(
-            stream: FirebaseFirestore.instance
-                .collection('users')
-                .doc(FirebaseAuth.instance.currentUser?.uid)
-                .collection('favorite')
-                .snapshots(),
+          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseAuth.instance.currentUser == null
+                ? const Stream<QuerySnapshot<Map<String, dynamic>>>.empty()
+                : FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(FirebaseAuth.instance.currentUser!.uid)
+                    .collection('favorite')
+                    .snapshots(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const SizedBox();
-              }
+              final docs = snapshot.data?.docs ?? [];
 
-              final docs = snapshot.data!.docs;
-
-              // Mengecek status favorit untuk mengubah warna ikon bintang
-              bool isFavorite = docs.any(
+              final isFavorite = docs.any(
                 (e) =>
-                    e['city'].toString().toLowerCase() ==
-                    widget.city.toLowerCase(),
+                    (e.data()['city'] ?? '').toString().trim().toLowerCase() ==
+                    widget.city.trim().toLowerCase(),
               );
 
               return IconButton(
+                tooltip: isFavorite
+                    ? 'Sudah menjadi favorit'
+                    : 'Tambahkan ke favorit',
                 icon: Icon(
                   isFavorite ? Icons.star : Icons.star_border,
                   color: isFavorite ? Colors.amber : null,
                 ),
-                onPressed: isFavorite ? null : addFavorite,
+                onPressed: addFavorite,
               );
             },
           ),
@@ -271,7 +315,13 @@ class _ResultState extends State<Result> {
                   }
 
                   final data = snapshot.data!;
-                  final temp = data['main']['temp'].toStringAsFixed(1);
+                  final isCelsius = MyApp.of(context).isCelsius;
+
+                  final temp = formatTemperature(
+                    data['main']['temp'],
+                    isCelsius,
+                    decimalPlaces: 1,
+                  );
                   final weather = data['weather'][0]['description']
                       .toString()
                       .toLowerCase();
@@ -313,7 +363,7 @@ class _ResultState extends State<Result> {
                                     height: 10,
                                   ),
                                   Text(
-                                    "$temp°C",
+                                    temp,
                                     style: const TextStyle(
                                       fontSize: 42,
                                       fontWeight: FontWeight.bold,
@@ -341,7 +391,10 @@ class _ResultState extends State<Result> {
                                         child: detailCard(
                                           Icons.thermostat,
                                           "Terasa",
-                                          "${data['main']['feels_like'].round()}°C",
+                                          formatTemperature(
+                                            data['main']['feels_like'],
+                                            isCelsius,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(
@@ -456,7 +509,10 @@ class _ResultState extends State<Result> {
                                                 color: Colors.blue,
                                               ),
                                               Text(
-                                                "${item['main']['temp'].round()}°",
+                                                formatTemperature(
+                                                  item['main']['temp'],
+                                                  isCelsius,
+                                                ),
                                               ),
                                               Text(
                                                 translateWeather(

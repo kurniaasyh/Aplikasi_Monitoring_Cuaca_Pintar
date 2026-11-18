@@ -1,10 +1,9 @@
-//======= IMPORTS (LIBRARY & HALAMAN LAIN) =======
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import 'search_field.dart';
 import 'register_page.dart';
 
-//======= WIDGET HALAMAN LOGIN (STATEFUL) =======
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -12,61 +11,104 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-//======= STATE DARI HALAMAN LOGIN =======
 class _LoginPageState extends State<LoginPage> {
-  //======= KONTROLER INPUT TEKS =======
+  // Controller input
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
 
-  //======= FUNGSI LOGIN DENGAN FIREBASE =======
+  final _formKey = GlobalKey<FormState>();
+
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+
+  // Fungsi login Firebase
   Future<void> login() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
-      // Menjalankan fungsi login dari Firebase Authentication
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final userCredential =
+          await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: emailController.text.trim(),
-        password: passwordController.text.trim(),
+        password: passwordController.text,
       );
 
-      if (!mounted) return;
-
-      //======= NAVIGASI KE HALAMAN PENCARIAN (BERHASIL) =======
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const SearchField()),
+      debugPrint('LOGIN BERHASIL');
+      debugPrint('UID: ${userCredential.user?.uid}');
+      debugPrint(
+        'CURRENT USER: ${FirebaseAuth.instance.currentUser?.uid}',
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
-      //======= PENANGANAN ERROR (ERROR HANDLING) =======
-      String message = "";
+      String message;
 
-      // Menentukan pesan error berdasarkan kode error yang diterima dari Firebase
-      if (e.code == 'user-not-found') {
-        message = "Email belum terdaftar";
-      } else if (e.code == 'wrong-password') {
-        message = "Password salah";
-      } else if (e.code == 'invalid-email') {
-        message = "Format email tidak valid";
-      } else {
-        message = e.message ?? "Login gagal";
+      switch (e.code) {
+        case 'user-not-found':
+          message = 'Email belum terdaftar.';
+          break;
+        case 'wrong-password':
+          message = 'Password salah.';
+          break;
+        case 'invalid-email':
+          message = 'Format email tidak valid.';
+          break;
+        case 'invalid-credential':
+          message = 'Email atau password salah.';
+          break;
+        case 'user-disabled':
+          message = 'Akun ini telah dinonaktifkan.';
+          break;
+        case 'too-many-requests':
+          message = 'Terlalu banyak percobaan. Coba lagi nanti.';
+          break;
+        case 'network-request-failed':
+          message = 'Periksa koneksi internet kamu.';
+          break;
+        default:
+          message = e.message ?? 'Login gagal.';
       }
 
-      // Menampilkan pesan error di layar menggunakan SnackBar
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
+    } catch (e) {
+      debugPrint('LOGIN ERROR: $e');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Terjadi kesalahan. Silakan coba lagi.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    //======= TAMPILAN ANTARMUKA (UI) =======
     return Scaffold(
       body: Container(
         width: double.infinity,
         height: double.infinity,
-
-        //======= DESAIN LATAR BELAKANG (GRADIENT) =======
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [
@@ -79,7 +121,6 @@ class _LoginPageState extends State<LoginPage> {
         ),
         child: Center(
           child: SingleChildScrollView(
-            //======= KOTAK FORM (CARD) =======
             child: Card(
               elevation: 10,
               margin: const EdgeInsets.symmetric(horizontal: 30),
@@ -88,109 +129,141 @@ class _LoginPageState extends State<LoginPage> {
               ),
               child: Padding(
                 padding: const EdgeInsets.all(25),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    //======= LOGO & TEKS HEADER =======
-                    const Icon(
-                      Icons.cloud,
-                      size: 100,
-                      color: Colors.blue,
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      "Login",
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Logo
+                      const Icon(
+                        Icons.cloud,
+                        size: 100,
+                        color: Colors.blue,
                       ),
-                    ),
-                    const SizedBox(height: 10),
-                    const Text(
-                      "Masuk untuk melihat cuaca terkini",
-                      style: TextStyle(
-                        color: Colors.grey,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
+                      const SizedBox(height: 20),
 
-                    //======= INPUT EMAIL =======
-                    TextField(
-                      controller: emailController,
-                      decoration: InputDecoration(
-                        labelText: "Email",
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
+                      const Text(
+                        "Login",
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
                         ),
-                        prefixIcon: const Icon(Icons.email),
                       ),
-                    ),
+                      const SizedBox(height: 10),
 
-                    const SizedBox(height: 15),
-
-                    //======= INPUT PASSWORD =======
-                    TextField(
-                      controller: passwordController,
-                      obscureText: true, // Menyembunyikan teks sandi
-                      decoration: InputDecoration(
-                        labelText: "Password",
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
+                      const Text(
+                        "Masuk untuk melihat cuaca terkini",
+                        style: TextStyle(
+                          color: Colors.grey,
                         ),
-                        prefixIcon: const Icon(Icons.lock),
                       ),
-                    ),
+                      const SizedBox(height: 20),
 
-                    const SizedBox(height: 20),
-
-                    //======= TOMBOL LOGIN =======
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 15),
-                          shape: RoundedRectangleBorder(
+                      // Input Email
+                      TextFormField(
+                        controller: emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: InputDecoration(
+                          labelText: "Email",
+                          border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(15),
                           ),
+                          prefixIcon: const Icon(Icons.email),
                         ),
-                        onPressed: () {
-                          String email = emailController.text.trim();
-                          String password = passwordController.text.trim();
+                        validator: (value) {
+                          final email = value?.trim() ?? '';
 
-                          //======= VALIDASI INPUT KOSONG =======
-                          if (email.isEmpty || password.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "Email dan password wajib diisi",
-                                ),
-                              ),
-                            );
-                            return;
+                          if (email.isEmpty) {
+                            return 'Email wajib diisi.';
                           }
 
-                          // Memanggil fungsi login jika validasi lolos
-                          login();
-                        },
-                        child: const Text("Login"),
-                      ),
-                    ),
+                          if (!RegExp(
+                            r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                          ).hasMatch(email)) {
+                            return 'Masukkan format email yang valid.';
+                          }
 
-                    //======= TOMBOL MENUJU HALAMAN REGISTER =======
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const RegisterPage(),
-                          ),
-                        );
-                      },
-                      child: const Text(
-                        "Belum punya akun? Register",
+                          return null;
+                        },
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 15),
+
+                      // Input Password
+                      TextFormField(
+                        controller: passwordController,
+                        obscureText: _obscurePassword,
+                        decoration: InputDecoration(
+                          labelText: "Password",
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                          ),
+                          prefixIcon: const Icon(Icons.lock),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Password wajib diisi.';
+                          }
+
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Tombol Login
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 15,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                          ),
+                          onPressed: _isLoading ? null : login,
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 22,
+                                  width: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text("Login"),
+                        ),
+                      ),
+
+                      // Menuju Register
+                      TextButton(
+                        onPressed: _isLoading
+                            ? null
+                            : () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const RegisterPage(),
+                                  ),
+                                );
+                              },
+                        child: const Text(
+                          "Belum punya akun? Register",
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

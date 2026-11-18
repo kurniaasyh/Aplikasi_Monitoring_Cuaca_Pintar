@@ -1,12 +1,13 @@
 //======= IMPORTS (LIBRARY & FILE LAIN) =======
 import 'package:flutter/material.dart';
 import 'package:flutter_aplikasi_cuaca/pages/result.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_aplikasi_cuaca/services/database_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_aplikasi_cuaca/pages/login_page.dart';
 import 'package:flutter_aplikasi_cuaca/main.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_aplikasi_cuaca/pages/settings_page.dart';
 
 //======= WIDGET HALAMAN PENCARIAN UTAMA (STATEFUL) =======
 class SearchField extends StatefulWidget {
@@ -54,21 +55,39 @@ class _SearchFieldState extends State<SearchField> {
               MyApp.of(context).toggleTheme();
             },
           ),
-
+// Tombol membuka halaman pengaturan.
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: 'Pengaturan',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SettingsPage(),
+                ),
+              );
+            },
+          ),
           // Tombol Logout
           IconButton(
             icon: const Icon(Icons.logout),
+            tooltip: 'Logout',
             onPressed: () async {
-              await FirebaseAuth.instance.signOut();
+              try {
+                await FirebaseAuth.instance.signOut();
 
-              if (!context.mounted) return;
+                // Tidak perlu Navigator ke LoginPage.
+                // AuthGate otomatis menampilkan LoginPage
+                // setelah status autentikasi berubah.
+              } catch (e) {
+                if (!mounted) return;
 
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const LoginPage(),
-                ),
-              );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Gagal logout: $e'),
+                  ),
+                );
+              }
             },
           ),
         ],
@@ -230,7 +249,7 @@ class _SearchFieldState extends State<SearchField> {
                       ),
 
                       //======= BAGIAN KOTA FAVORIT =======
-                      if (favoriteCities.isNotEmpty) ...[
+                      ...[
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(18),
@@ -276,83 +295,92 @@ class _SearchFieldState extends State<SearchField> {
                               ),
 
                               // Daftar Kota Favorit
-                              Wrap(
-                                spacing: 10,
-                                runSpacing: 10,
-                                children: favoriteCities.map(
-                                  (city) {
-                                    return InkWell(
-                                      borderRadius: BorderRadius.circular(
-                                        50,
-                                      ),
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => Result(
-                                              city: city,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 14,
-                                          vertical: 10,
+                              if (favoriteCities.isEmpty)
+                                const Text(
+                                  'Belum ada kota favorit. '
+                                  'Tekan ikon bintang pada halaman cuaca untuk menambahkan.',
+                                  style: TextStyle(color: Colors.black54),
+                                )
+                              else
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  children: favoriteCities.map(
+                                    (city) {
+                                      return InkWell(
+                                        borderRadius: BorderRadius.circular(
+                                          50,
                                         ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            50,
-                                          ),
-                                          boxShadow: const [
-                                            BoxShadow(
-                                              color: Colors.black12,
-                                              blurRadius: 10,
-                                            ),
-                                          ],
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(
-                                              Icons.star,
-                                              size: 18,
-                                              color: Colors.amber,
-                                            ),
-                                            const SizedBox(
-                                              width: 8,
-                                            ),
-                                            ConstrainedBox(
-                                              constraints: const BoxConstraints(
-                                                maxWidth: 130,
-                                              ),
-                                              child: Text(
-                                                city,
-                                                overflow: TextOverflow.ellipsis,
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => Result(
+                                                city: city,
                                               ),
                                             ),
-                                            const SizedBox(
-                                              width: 8,
+                                          );
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 10,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(
+                                              50,
                                             ),
-                                            GestureDetector(
-                                              onTap: () async {
-                                                await removeFavorite(
-                                                  city,
-                                                );
-                                              },
-                                              child: const Icon(
-                                                Icons.close,
+                                            boxShadow: const [
+                                              BoxShadow(
+                                                color: Colors.black12,
+                                                blurRadius: 10,
+                                              ),
+                                            ],
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.star,
                                                 size: 18,
+                                                color: Colors.amber,
                                               ),
-                                            ),
-                                          ],
+                                              const SizedBox(
+                                                width: 8,
+                                              ),
+                                              ConstrainedBox(
+                                                constraints:
+                                                    const BoxConstraints(
+                                                  maxWidth: 130,
+                                                ),
+                                                child: Text(
+                                                  city,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(
+                                                width: 8,
+                                              ),
+                                              GestureDetector(
+                                                onTap: () async {
+                                                  await removeFavorite(
+                                                    city,
+                                                  );
+                                                },
+                                                child: const Icon(
+                                                  Icons.close,
+                                                  size: 18,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    );
-                                  },
-                                ).toList(),
-                              ),
+                                      );
+                                    },
+                                  ).toList(),
+                                ),
                             ],
                           ),
                         ),
@@ -412,101 +440,169 @@ class _SearchFieldState extends State<SearchField> {
   }
 
   //======= FUNGSI: MENGAMBIL RIWAYAT DARI FIRESTORE =======
+
   Future<void> loadHistory() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final currentUser = FirebaseAuth.instance.currentUser;
 
-    if (user == null) return;
+    if (currentUser == null) return;
 
-    final snapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('history')
-        .orderBy('time', descending: true)
-        .get();
+    final database = DatabaseService.instance;
 
-    setState(() {
-      searchHistory =
-          snapshot.docs.map((doc) => doc['city'].toString()).toList();
-    });
-  }
+    try {
+      // 1. Tampilkan riwayat dari SQLite terlebih dahulu.
+      final localHistory = await database.getSearchHistory(
+        currentUser.uid,
+      );
 
-  //======= FUNGSI: MENYIMPAN RIWAYAT KE LOKAL (SHARED PREFERENCES) =======
-  Future<void> saveHistory() async {
-    final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
 
-    await prefs.setStringList(
-      'history',
-      searchHistory,
-    );
+      setState(() {
+        searchHistory = localHistory;
+      });
+
+      // 2. Ambil riwayat dari Firestore.
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('history')
+          .orderBy('time', descending: true)
+          .get();
+
+      // 3. Masukkan data Firestore ke SQLite.
+      for (final doc in snapshot.docs.reversed) {
+        final city = (doc.data()['city'] ?? '').toString().trim();
+
+        if (city.isNotEmpty) {
+          await database.addSearchHistory(
+            userId: currentUser.uid,
+            city: city,
+          );
+        }
+      }
+
+      // 4. Tampilkan hasil sinkronisasi.
+      final updatedHistory = await database.getSearchHistory(
+        currentUser.uid,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        searchHistory = updatedHistory;
+      });
+    } catch (e) {
+      debugPrint('LOAD HISTORY ERROR: $e');
+    }
   }
 
   //======= FUNGSI: MENAMBAHKAN RIWAYAT PENCARIAN =======
-  void addHistory(String city) async {
-    setState(() {
-      searchHistory.remove(city);
-      searchHistory.insert(0, city);
-    });
 
-    saveHistory();
+  Future<void> addHistory(String city) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
 
-    // SIMPAN KE FIRESTORE
-    final user = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
 
-    if (user != null) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection('history')
-            .add({
+    try {
+      // 1. Simpan ke SQLite.
+      await DatabaseService.instance.addSearchHistory(
+        userId: currentUser.uid,
+        city: city,
+      );
+
+      // 2. Perbarui tampilan dari SQLite.
+      final updatedHistory = await DatabaseService.instance.getSearchHistory(
+        currentUser.uid,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        searchHistory = updatedHistory;
+      });
+
+      // 3. Periksa apakah kota sudah ada di Firestore.
+      final ref = FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('history');
+
+      final existing = await ref.where('city', isEqualTo: city).limit(1).get();
+
+      // 4. Simpan ke Firestore jika belum ada.
+      if (existing.docs.isEmpty) {
+        await ref.add({
           'city': city,
           'time': Timestamp.now(),
         });
-
-        debugPrint(
-          "BERHASIL SIMPAN FIRESTORE",
-        );
-      } catch (e) {
-        debugPrint(
-          "ERROR FIRESTORE: $e",
-        );
       }
+
+      debugPrint('RIWAYAT TERSIMPAN DI SQLITE DAN FIRESTORE');
+    } catch (e) {
+      debugPrint('ADD HISTORY ERROR: $e');
     }
   }
 
   //======= FUNGSI: MENGAMBIL DAFTAR FAVORIT DARI FIRESTORE =======
+
   Future<void> loadFavorite() async {
-    if (user == null) return;
+    final currentUser = FirebaseAuth.instance.currentUser;
 
-    FirebaseFirestore.instance
-        .collection(
-          'users',
-        )
-        .doc(
-          user!.uid,
-        )
-        .collection(
-          'favorite',
-        )
-        .snapshots()
-        .listen(
-      (
-        snapshot,
-      ) {
-        if (!mounted) return;
+    if (currentUser == null) return;
 
-        setState(() {
-          favoriteCities = snapshot.docs
-              .map(
-                (
-                  e,
-                ) =>
-                    e['city'].toString(),
-              )
-              .toList();
-        });
-      },
-    );
+    final database = DatabaseService.instance;
+
+    try {
+      // Ambil favorit dari SQLite.
+      final localFavorites = await database.getFavoriteCities(
+        currentUser.uid,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        favoriteCities = localFavorites;
+      });
+
+      // Pantau perubahan favorit dari Firestore.
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('favorite')
+          .snapshots()
+          .listen(
+        (snapshot) async {
+          try {
+            // Masukkan data Firestore ke SQLite.
+            for (final doc in snapshot.docs) {
+              final city = (doc.data()['city'] ?? '').toString();
+
+              if (city.isNotEmpty) {
+                await database.addFavoriteCity(
+                  userId: currentUser.uid,
+                  city: city,
+                );
+              }
+            }
+
+            final updatedFavorites =
+                await database.getFavoriteCities(currentUser.uid);
+
+            if (!mounted) return;
+
+            setState(() {
+              favoriteCities = updatedFavorites;
+            });
+          } catch (e) {
+            debugPrint('SYNC FAVORITE ERROR: $e');
+          }
+        },
+        onError: (error) {
+          debugPrint('FIRESTORE FAVORITE ERROR: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('LOAD FAVORITE ERROR: $e');
+    }
   }
 
   //======= FUNGSI: DETEKSI LOKASI PENGGUNA (GPS/GEOFIREBASE) =======
@@ -586,66 +682,75 @@ class _SearchFieldState extends State<SearchField> {
   }
 
   //======= FUNGSI: MENGHAPUS KOTA DARI FAVORIT DI FIRESTORE =======
-  Future<void> removeFavorite(
-    String city,
-  ) async {
-    if (user == null) return;
 
-    final docs = await FirebaseFirestore.instance
-        .collection(
-          'users',
-        )
-        .doc(
-          user!.uid,
-        )
-        .collection(
-          'favorite',
-        )
-        .where(
-          'city',
-          isEqualTo: city,
-        )
-        .get();
+  Future<void> removeFavorite(String city) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
 
-    for (var d in docs.docs) {
-      await d.reference.delete();
+    if (currentUser == null) return;
+
+    // Hapus dari tampilan.
+    setState(() {
+      favoriteCities.remove(city);
+    });
+
+    try {
+      // Hapus dari SQLite.
+      await DatabaseService.instance.removeFavoriteCity(
+        userId: currentUser.uid,
+        city: city,
+      );
+
+      // Hapus dari Firestore.
+      final docs = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('favorite')
+          .where('city', isEqualTo: city)
+          .get();
+
+      for (final doc in docs.docs) {
+        await doc.reference.delete();
+      }
+    } catch (e) {
+      debugPrint('REMOVE FAVORITE ERROR: $e');
     }
   }
 
   //======= FUNGSI: MENGHAPUS RIWAYAT PENCARIAN (LOKAL & FIRESTORE) =======
-  void removeHistory(int index) async {
-    String city = searchHistory[index];
 
+  Future<void> removeHistory(int index) async {
+    if (index < 0 || index >= searchHistory.length) return;
+
+    final city = searchHistory[index];
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    // Hapus dari tampilan terlebih dahulu.
     setState(() {
-      searchHistory.removeAt(
-        index,
-      );
+      searchHistory.removeAt(index);
     });
 
-    saveHistory();
+    if (currentUser == null) return;
 
-    final user = FirebaseAuth.instance.currentUser;
+    try {
+      // Hapus dari SQLite.
+      await DatabaseService.instance.removeSearchHistory(
+        userId: currentUser.uid,
+        city: city,
+      );
 
-    if (user != null) {
+      // Hapus dari Firestore.
       final snapshot = await FirebaseFirestore.instance
-          .collection(
-            'users',
-          )
-          .doc(
-            user.uid,
-          )
-          .collection(
-            'history',
-          )
-          .where(
-            'city',
-            isEqualTo: city,
-          )
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('history')
+          .where('city', isEqualTo: city)
           .get();
 
-      for (var doc in snapshot.docs) {
+      for (final doc in snapshot.docs) {
         await doc.reference.delete();
       }
+    } catch (e) {
+      debugPrint('REMOVE HISTORY ERROR: $e');
     }
   }
 }
